@@ -1,0 +1,14 @@
+# Built by dotnet on every run
+bin/
+obj/
+
+# Generated training data: anyone can recreate it with create_examples
+data/
+
+# The trained models live in server/models; this copy is not needed
+train_AI/models/
+
+# Editor settings
+.vs/
+.vscode/
+*.user
