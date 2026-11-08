@@ -34,9 +34,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddCors();
 
 var app = builder.Build();
-app.UseCors(policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 
-app.MapGet("/", () => "Hebrew date AI is running. Try /parse?text=טו באב תשפד");
+// The demo page: wwwroot/index.html is shown at the server's main address.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+app.UseCors(policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 
 app.MapGet("/parse", (string? text, PredictionEnginePool<DateRow, Guess> models) =>
 {

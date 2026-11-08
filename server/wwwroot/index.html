@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הקלדת תאריך עברי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600&family=Frank+Ruhl+Libre:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FBFBFD; --ink: #1E2233; --muted: #6B7088; --line: #DCDEE8;
+    --brand: #3F4A8A; --ok: #2E7D5B; --warn: #A8641A; --field: #FFFFFF;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #161823; --ink: #E8E9F0; --muted: #9A9EB5; --line: #2E3245;
+      --brand: #9BA6E8; --ok: #6CC49A; --warn: #E0A35C; --field: #1E2130;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 18px/1.6 "Assistant", "Segoe UI", Arial, sans-serif;
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 56px 20px; }
+  h1 { font: 600 20px/1.3 "Assistant", "Segoe UI", Arial, sans-serif; margin: 0 0 4px; }
+  .hint { color: var(--muted); margin: 0 0 28px; }
+  input {
+    width: 100%; padding: 16px 18px; font: 500 28px/1.3 "Frank Ruhl Libre", "David", serif;
+    color: var(--ink); background: var(--field);
+    border: 2px solid var(--line); border-radius: 10px; outline: none;
+  }
+  input:focus-visible { border-color: var(--brand); }
+  .answer {
+    margin: 36px 0 8px; min-height: 1.3em;
+    font: 700 24px/1.3 "Frank Ruhl Libre", "David", serif; color: var(--brand);
+  }
+  .answer.empty { color: var(--muted); font-weight: 500; }
+  .gregorian { color: var(--muted); margin: 0 0 32px; min-height: 1.6em; }
+  .parts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .part { padding-top: 10px; }
+  .part .label { color: var(--muted); font-size: 15px; }
+  .part .value { font-weight: 600; min-height: 1.6em; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--ok); transition: width .25s; }
+  .bar span.low { background: var(--warn); }
+  .sure { color: var(--muted); font-size: 14px; }
+  ul { margin: 28px 0 0; padding: 0 18px 0 0; color: var(--warn); }
+  @media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>הקלדת תאריך עברי</h1>
+  <p class="hint">כתבו תאריך כמו שאתם רגילים, עם גרשיים או בלי, ואפילו עם שגיאת כתיב.</p>
+
+  <input id="text" type="text" placeholder="ט״ו בשבט תשפ״ז" autocomplete="off" autofocus aria-label="תאריך עברי">
+
+  <p class="answer empty" id="answer" aria-live="polite">התאריך יופיע כאן</p>
+  <p class="gregorian" id="gregorian"></p>
+
+  <div class="parts">
+    <div class="part"><div class="label">יום</div><div class="value" id="day"></div><div class="bar"><span id="dayBar"></span></div><div class="sure" id="daySure"></div></div>
+    <div class="part"><div class="label">חודש</div><div class="value" id="month"></div><div class="bar"><span id="monthBar"></span></div><div class="sure" id="monthSure"></div></div>
+    <div class="part"><div class="label">שנה</div><div class="value" id="year"></div><div class="bar"><span id="yearBar"></span></div><div class="sure" id="yearSure"></div></div>
+  </div>
+
+  <ul id="problems"></ul>
+</main>
+
+<script>
+const MONTHS = {
+  Tishrei: "תשרי", Cheshvan: "חשוון", Kislev: "כסלו", Tevet: "טבת", Shevat: "שבט",
+  Adar: "אדר", AdarI: "אדר א׳", AdarII: "אדר ב׳", Nisan: "ניסן", Iyar: "אייר",
+  Sivan: "סיוון", Tammuz: "תמוז", Av: "אב", Elul: "אלול"
+};
+const PROBLEMS = {
+  "Could not find a day and a month": "לא נמצאו יום וחודש",
+  "Could not find a day": "לא נמצא יום",
+  "Could not find a month": "לא נמצא חודש",
+  "Could not read the year": "לא הצלחתי לקרוא את השנה",
+  "No year was typed": "לא הוקלדה שנה"
+};
+
+// 15 → ט״ו, 784 → תשפ״ד
+function hebrewNumber(n) {
+  let s = "";
+  while (n >= 400) { s += "ת"; n -= 400; }
+  if (n >= 100) { s += "קרש"[Math.floor(n / 100) - 1]; n %= 100; }
+  if (n === 15) s += "טו"; else if (n === 16) s += "טז"; else {
+    if (n >= 10) { s += "יכלמנסעפצ"[Math.floor(n / 10) - 1]; n %= 10; }
+    if (n > 0) s += "אבגדהוזחט"[n - 1];
+  }
+  return s.length === 1 ? s + "׳" : s.slice(0, -1) + "״" + s.slice(-1);
+}
+
+const $ = id => document.getElementById(id);
+
+function showPart(name, text, confidence) {
+  $(name).textContent = text ?? "לא זוהה";
+  const bar = $(name + "Bar");
+  bar.style.width = Math.round(confidence * 100) + "%";
+  bar.classList.toggle("low", confidence < 0.8);
+  $(name + "Sure").textContent = `ביטחון ${Math.round(confidence * 100)}%`;
+}
+
+function clear() {
+  $("answer").textContent = "התאריך יופיע כאן";
+  $("answer").classList.add("empty");
+  $("gregorian").textContent = "";
+  $("problems").innerHTML = "";
+  for (const p of ["day", "month", "year"]) {
+    $(p).textContent = ""; $(p + "Bar").style.width = "0"; $(p + "Sure").textContent = "";
+  }
+}
+
+async function parse(text) {
+  if (!text.trim()) { clear(); return; }
+  try {
+    const res = await fetch("/parse?text=" + encodeURIComponent(text));
+    const r = await res.json();
+    const day = r.day ? hebrewNumber(r.day) : null;
+    const month = r.month ? MONTHS[r.month] ?? r.month : null;
+    const year = r.year ? hebrewNumber(r.year % 1000) : null;
+
+    const pieces = [day, month, year].filter(Boolean);
+    $("answer").textContent = pieces.length ? pieces.join(" ") : "לא זוהה תאריך";
+    $("answer").classList.toggle("empty", !pieces.length);
+
+    $("gregorian").textContent = r.gregorianDate
+      ? "בלועזי: " + r.gregorianDate.split("-").reverse().join("/")
+      : "";
+
+    showPart("day", day, r.confidence.day);
+    showPart("month", month, r.confidence.month);
+    showPart("year", year ?? (r.problems.includes("No year was typed") ? "לא הוקלדה" : null), r.confidence.year);
+
+    $("problems").innerHTML = "";
+    for (const p of r.problems) {
+      const li = document.createElement("li");
+      li.textContent = PROBLEMS[p] ?? (p.includes("does not exist") ? "התאריך הזה לא קיים בלוח" : p);
+      $("problems").appendChild(li);
+    }
+  } catch {
+    clear();
+    $("answer").textContent = "השרת לא עונה. ודאו שהוא פועל (dotnet run).";
+  }
+}
+
+let timer;
+$("text").addEventListener("input", e => {
+  clearTimeout(timer);
+  timer = setTimeout(() => parse(e.target.value), 300);
+});
+</script>
+</body>
+</html>
