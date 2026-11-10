@@ -44,12 +44,14 @@ class Program
     static void Main()
     {
         var calendar = new HebrewCalendar();
-        var start = new DateTime(1940, 1, 1);
-        var end = new DateTime(2090, 12, 31);
+        var start = new DateTime(1600, 1, 1);
+        var end = new DateTime(2200, 12, 31);
 
         Directory.CreateDirectory("data");
         using var writer = new StreamWriter("data/hebrew_dates.csv", false, new UTF8Encoding(true));
-        writer.WriteLine("Text,Day,Month,Year");
+        // The year is also split into its three letter-digits (תשפ״ז = 7, 8, 7), so the trainer
+        // can learn each digit with a small model instead of one big model with ~290 years.
+        writer.WriteLine("Text,Day,Month,Year,YearHundreds,YearTens,YearUnits");
 
         int rows = 0;
         for (var date = start; date <= end; date = date.AddDays(1))
@@ -65,8 +67,13 @@ class Program
             {
                 var (text, hasYear) = WriteDate(day, monthLabel, year);
 
-                // Year 0 means the user didn't type a year.
-                writer.WriteLine($"{Csv(text)},{day},{monthLabel},{(hasYear ? year : 0)}");
+                // Year 0 means the user didn't type a year; then all three digits are 0 too.
+                // Hundreds is never 0 in a real year (תק = 5 ... תת = 8), so it marks "no year".
+                int typedYear = hasYear ? year : 0;
+                int hundreds = hasYear ? year % 1000 / 100 : 0;
+                int tens = hasYear ? year % 100 / 10 : 0;
+                int units = hasYear ? year % 10 : 0;
+                writer.WriteLine($"{Csv(text)},{day},{monthLabel},{typedYear},{hundreds},{tens},{units}");
                 rows++;
             }
         }

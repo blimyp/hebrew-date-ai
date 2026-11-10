@@ -8,7 +8,8 @@ const float MinConfidence = 0.8f;
 
 string ModelPath(string name) => Path.Combine(AppContext.BaseDirectory, "models", $"{name}.zip");
 
-foreach (var name in new[] { "day", "month", "year" })
+// The year comes from three models, one per letter-digit (תשפ״ז = 7, 8, 7).
+foreach (var name in new[] { "day", "month", "yearhundreds", "yeartens", "yearunits" })
 {
     if (!File.Exists(ModelPath(name)))
     {
@@ -20,11 +21,13 @@ foreach (var name in new[] { "day", "month", "year" })
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load the three trained models once, when the server starts.
+// Load the trained models once, when the server starts.
 builder.Services.AddPredictionEnginePool<DateRow, Guess>()
     .FromFile("day", ModelPath("day"))
     .FromFile("month", ModelPath("month"))
-    .FromFile("year", ModelPath("year"));
+    .FromFile("yearhundreds", ModelPath("yearhundreds"))
+    .FromFile("yeartens", ModelPath("yeartens"))
+    .FromFile("yearunits", ModelPath("yearunits"));
 
 // Show Hebrew as Hebrew in the answers, not as \u05D8 codes.
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -49,9 +52,12 @@ app.MapGet("/parse", (string? text, PredictionEnginePool<DateRow, Guess> models)
     var input = new DateRow { Text = text };
     var day = models.Predict("day", input);
     var month = models.Predict("month", input);
-    var year = models.Predict("year", input);
+    var (year, yearSure) = HebrewDates.CombineYear(
+        models.Predict("yearhundreds", input),
+        models.Predict("yeartens", input),
+        models.Predict("yearunits", input));
 
-    var confidence = new Confidence(HebrewDates.Sure(day), HebrewDates.Sure(month), HebrewDates.Sure(year));
+    var confidence = new Confidence(HebrewDates.Sure(day), HebrewDates.Sure(month), yearSure);
     var problems = new List<string>();
 
     // Keep each part only if its model is sure of it.
@@ -64,8 +70,8 @@ app.MapGet("/parse", (string? text, PredictionEnginePool<DateRow, Guess> models)
 
     int? yearNumber = null;
     if (confidence.Year < MinConfidence) problems.Add("Could not read the year");
-    else if (year.PredictedValue == "0") problems.Add("No year was typed");
-    else yearNumber = int.Parse(year.PredictedValue);
+    else if (year == 0) problems.Add("No year was typed");
+    else yearNumber = year;
 
     // A Gregorian date needs all three parts, and they must make a real date.
     string? gregorian = null;
@@ -89,6 +95,9 @@ public class DateRow
     public string Day { get; set; } = "";
     public string Month { get; set; } = "";
     public string Year { get; set; } = "";
+    public string YearHundreds { get; set; } = "";
+    public string YearTens { get; set; } = "";
+    public string YearUnits { get; set; } = "";
 }
 
 /// <summary>A model's answer and how sure it is of each option.</summary>
@@ -122,10 +131,32 @@ static class HebrewDates
 
     public static float Sure(Guess g) => g.Score.Length == 0 ? 0 : MathF.Round(g.Score.Max(), 2);
 
+    /// <summary>
+    /// Builds the year from the three digit answers: 7, 8, 7 → 5787. 0 means no year typed.
+    /// The year is only as sure as its least sure digit. Same rule as in train_AI.
+    /// </summary>
+    public static (int Year, float Sure) CombineYear(Guess hundreds, Guess tens, Guess units)
+    {
+        // Hundreds 0 means no year was typed; the other two digits don't matter then.
+        if (hundreds.PredictedValue == "0") return (0, Sure(hundreds));
+
+        int year = 5000 + int.Parse(hundreds.PredictedValue) * 100
+                        + int.Parse(tens.PredictedValue) * 10
+                        + int.Parse(units.PredictedValue);
+        return (year, Math.Min(Sure(hundreds), Math.Min(Sure(tens), Sure(units))));
+    }
+
     /// <summary>Turns the answers into a Gregorian date (yyyy-MM-dd), or explains why it can't.</summary>
     public static (string? Date, string? Problem) ToGregorian(int day, string monthLabel, int year)
     {
         var calendar = new HebrewCalendar();
+
+        // The calendar only knows years 5343–5999 (1583–2239); outside that it throws.
+        int firstYear = calendar.GetYear(calendar.MinSupportedDateTime);
+        int lastYear = calendar.GetYear(calendar.MaxSupportedDateTime);
+        if (year < firstYear || year > lastYear)
+            return (null, $"Year {year} is outside the supported range ({firstYear}–{lastYear})");
+
         var months = calendar.IsLeapYear(year) ? LeapYearMonths : RegularYearMonths;
         int month = Array.IndexOf(months, monthLabel) + 1;
         if (month == 0) return (null, $"{monthLabel} does not exist in {year}");

@@ -10,13 +10,13 @@
 <style>
   :root {
     --paper: #FBFBFD; --ink: #1E2233; --muted: #6B7088; --line: #DCDEE8;
-    --brand: #3F4A8A; --ok: #2E7D5B; --warn: #A8641A; --field: #FFFFFF;
+    --brand: #3F4A8A; --ok: #2E7D5B; --warn: #B3261E; --field: #FFFFFF;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --paper: #161823; --ink: #E8E9F0; --muted: #9A9EB5; --line: #2E3245;
-      --brand: #9BA6E8; --ok: #6CC49A; --warn: #E0A35C; --field: #1E2130;
+      --brand: #9BA6E8; --ok: #6CC49A; --warn: #F2827A; --field: #1E2130;
       color-scheme: dark;
     }
   }
@@ -34,12 +34,21 @@
     border: 2px solid var(--line); border-radius: 10px; outline: none;
   }
   input:focus-visible { border-color: var(--brand); }
+  /* The result card: appears only once something is typed. */
+  .result {
+    margin-top: 32px; padding: 20px 22px;
+    background: var(--field); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .result[hidden], .details[hidden] { display: none; }
+  .section-label { color: var(--muted); font-size: 14px; margin: 0 0 4px; }
+  .details { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
   .answer {
-    margin: 36px 0 8px; min-height: 1.3em;
+    margin: 0 0 4px; min-height: 1.3em;
     font: 700 24px/1.3 "Frank Ruhl Libre", "David", serif; color: var(--brand);
   }
   .answer.empty { color: var(--muted); font-weight: 500; }
-  .gregorian { color: var(--muted); margin: 0 0 32px; min-height: 1.6em; }
+  .gregorian { color: var(--muted); margin: 0; min-height: 1.6em; }
+  .gregorian.error { color: var(--warn); }
   .parts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .part { padding-top: 10px; }
   .part .label { color: var(--muted); font-size: 15px; }
@@ -48,7 +57,8 @@
   .bar span { display: block; height: 100%; width: 0; background: var(--ok); transition: width .25s; }
   .bar span.low { background: var(--warn); }
   .sure { color: var(--muted); font-size: 14px; }
-  ul { margin: 28px 0 0; padding: 0 18px 0 0; color: var(--warn); }
+  ul { margin: 20px 0 0; padding: 0 18px 0 0; color: var(--warn); }
+  ul:empty { display: none; }
   @media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
 </style>
 </head>
@@ -59,16 +69,22 @@
 
   <input id="text" type="text" placeholder="ט״ו בשבט תשפ״ז" autocomplete="off" autofocus aria-label="תאריך עברי">
 
-  <p class="answer empty" id="answer" aria-live="polite">התאריך יופיע כאן</p>
+  <section class="result" id="result" hidden aria-live="polite">
+  <p class="section-label">מה הבנו</p>
+  <p class="answer" id="answer"></p>
   <p class="gregorian" id="gregorian"></p>
 
+  <div class="details" id="details">
+  <p class="section-label">כמה המערכת בטוחה בכל חלק</p>
   <div class="parts">
     <div class="part"><div class="label">יום</div><div class="value" id="day"></div><div class="bar"><span id="dayBar"></span></div><div class="sure" id="daySure"></div></div>
     <div class="part"><div class="label">חודש</div><div class="value" id="month"></div><div class="bar"><span id="monthBar"></span></div><div class="sure" id="monthSure"></div></div>
     <div class="part"><div class="label">שנה</div><div class="value" id="year"></div><div class="bar"><span id="yearBar"></span></div><div class="sure" id="yearSure"></div></div>
   </div>
+  </div>
 
   <ul id="problems"></ul>
+  </section>
 </main>
 
 <script>
@@ -107,10 +123,14 @@ function showPart(name, text, confidence) {
   $(name + "Sure").textContent = `ביטחון ${Math.round(confidence * 100)}%`;
 }
 
+// Empties the result card and hides it.
 function clear() {
-  $("answer").textContent = "התאריך יופיע כאן";
-  $("answer").classList.add("empty");
+  $("result").hidden = true;
+  $("details").hidden = false;
+  $("answer").textContent = "";
+  $("answer").classList.remove("empty");
   $("gregorian").textContent = "";
+  $("gregorian").classList.remove("error");
   $("problems").innerHTML = "";
   for (const p of ["day", "month", "year"]) {
     $(p).textContent = ""; $(p + "Bar").style.width = "0"; $(p + "Sure").textContent = "";
@@ -126,26 +146,37 @@ async function parse(text) {
     const month = r.month ? MONTHS[r.month] ?? r.month : null;
     const year = r.year ? hebrewNumber(r.year % 1000) : null;
 
+    $("result").hidden = false;
+    $("details").hidden = false;
     const pieces = [day, month, year].filter(Boolean);
     $("answer").textContent = pieces.length ? pieces.join(" ") : "לא זוהה תאריך";
     $("answer").classList.toggle("empty", !pieces.length);
 
+    // A year the calendar can't convert (before 1583 or after 2239) is shown here,
+    // in place of the Gregorian date, and not again in the problems list.
+    const isOutOfRange = p => p.includes("outside the supported range");
+    const outOfRange = r.problems.some(isOutOfRange);
     $("gregorian").textContent = r.gregorianDate
       ? "בלועזי: " + r.gregorianDate.split("-").reverse().join("/")
-      : "";
+      : outOfRange ? "אין המרה ללועזי לשנה זו" : "";
+    $("gregorian").classList.toggle("error", outOfRange);
 
     showPart("day", day, r.confidence.day);
     showPart("month", month, r.confidence.month);
     showPart("year", year ?? (r.problems.includes("No year was typed") ? "לא הוקלדה" : null), r.confidence.year);
 
     $("problems").innerHTML = "";
-    for (const p of r.problems) {
+    for (const p of r.problems.filter(p => !isOutOfRange(p))) {
       const li = document.createElement("li");
       li.textContent = PROBLEMS[p] ?? (p.includes("does not exist") ? "התאריך הזה לא קיים בלוח" : p);
       $("problems").appendChild(li);
     }
   } catch {
+    // Show only the message: there are no parts to detail.
     clear();
+    $("result").hidden = false;
+    $("details").hidden = true;
+    $("answer").classList.add("empty");
     $("answer").textContent = "השרת לא עונה. ודאו שהוא פועל (dotnet run).";
   }
 }
