@@ -41,6 +41,9 @@ class Program
         ["Elul"]     = ["אלול"],
     };
 
+    // The ways people write Rosh Chodesh (the 1st of the month).
+    static readonly string[] RoshChodeshSpellings = ["ר״ח", "ר\"ח", "רח", "ראש חודש"];
+
     static void Main()
     {
         var calendar = new HebrewCalendar();
@@ -91,6 +94,9 @@ class Program
         if (Rng.NextDouble() < TypoProbability) month = AddTypo(month);
 
         string dayText = Punctuate(ToHebrewLetters(day), style);
+        // Rosh Chodesh means the 1st of the month: "ר״ח ניסן" = א׳ ניסן.
+        if (day == 1 && Rng.NextDouble() < 0.3)
+            dayText = RoshChodeshSpellings[Rng.Next(RoshChodeshSpellings.Length)];
         string prefix = Rng.NextDouble() < 0.5 ? "ב" : "";   // "ט״ו בשבט" or "ט״ו שבט"
         string text = $"{dayText} {prefix}{month}";
 
@@ -118,15 +124,18 @@ class Program
         return sb.ToString();
     }
 
-    /// <summary>Adds a geresh to one letter, or gershayim before the last of several.</summary>
+    /// <summary>
+    /// Adds a geresh to one letter, or gershayim before the last of several.
+    /// People sometimes type gershayim after one letter too (א" instead of א'), so some rows do that.
+    /// </summary>
     static string Punctuate(string letters, int style)
     {
         if (style == 2) return letters;
         string geresh = style == 0 ? "׳" : "'";
         string gershayim = style == 0 ? "״" : "\"";
-        return letters.Length == 1
-            ? letters + geresh
-            : letters[..^1] + gershayim + letters[^1];
+        if (letters.Length == 1)
+            return letters + (Rng.NextDouble() < 0.2 ? gershayim : geresh);
+        return letters[..^1] + gershayim + letters[^1];
     }
 
     /// <summary>Swaps a final-position letter to its final form: תשפ → תשף.</summary>
