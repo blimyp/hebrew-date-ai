@@ -3,7 +3,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Render's free plan has only 512MB. The default server GC keeps a heap per CPU
+         core and uses much more memory; the workstation GC keeps one small heap. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Ask the GC to compact memory more often, so the heap stays small. -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+  </ItemGroup>
 
   <!-- Copy the trained models next to the program, so they go wherever it goes. -->
   <ItemGroup>

@@ -38,6 +38,17 @@ builder.Services.AddCors();
 
 var app = builder.Build();
 
+// Load the models now, one after another. Otherwise each model loads on the first
+// request that needs it, and several requests at once (the demo sends one per pause
+// in typing) load the same model several times together and run out of memory.
+var pool = app.Services.GetRequiredService<PredictionEnginePool<DateRow, Guess>>();
+foreach (var name in new[] { "day", "month", "yearhundreds", "yeartens", "yearunits" })
+{
+    pool.Predict(name, new DateRow { Text = "א ניסן תשפ״ז" });
+    GC.Collect();
+}
+Console.WriteLine($"Models loaded, memory in use: {GC.GetTotalMemory(true) / 1024 / 1024} MB");
+
 // The demo page: wwwroot/index.html is shown at the server's main address.
 app.UseDefaultFiles();
 app.UseStaticFiles();
